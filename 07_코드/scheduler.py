@@ -43,6 +43,24 @@ def phase_execute():
     execute_trades.main()
 
 
+def phase_sell(market: str = "KR"):
+    print(f"\n[scheduler] ▶ Phase: SELL ({market})")
+    from agents.sell_agent import run as sell_run
+    return sell_run(market)
+
+
+def phase_us_prepare():
+    print("\n[scheduler] ▶ Phase: US_PREPARE (미국주식 분석용 데이터 준비)")
+    import prepare_us_for_guardian
+    prepare_us_for_guardian.main()
+
+
+def phase_us_execute():
+    print("\n[scheduler] ▶ Phase: US_EXECUTE (미국주식 VTS 주문)")
+    from agents.us_trading_agent import run as us_run
+    return us_run(dry_run=False)
+
+
 def phase_report():
     print("\n[scheduler] ▶ Phase: REPORT")
     from agents.report_agent import run as report_run
@@ -52,8 +70,12 @@ def phase_report():
 def main():
     parser = argparse.ArgumentParser(description="AI 주식 자동화 스케줄러")
     parser.add_argument("--phase",
-                        choices=["collect", "prepare", "execute", "report"],
+                        choices=["collect", "prepare", "execute", "report",
+                                 "sell", "us_prepare", "us_execute"],
                         required=True)
+    parser.add_argument("--market", default="KR",
+                        choices=["KR", "US", "ALL"],
+                        help="sell phase에서 대상 시장 지정")
     args = parser.parse_args()
 
     init_db()
@@ -68,6 +90,12 @@ def main():
             phase_prepare()
         elif args.phase == "execute":
             phase_execute()
+        elif args.phase == "sell":
+            phase_sell(args.market)
+        elif args.phase == "us_prepare":
+            phase_us_prepare()
+        elif args.phase == "us_execute":
+            phase_us_execute()
         elif args.phase == "report":
             phase_report()
         print(f"\n[scheduler] 완료\n")

@@ -38,6 +38,12 @@ class KisTrader:
         self._sell_tr = "VTTC0801U" if self._is_mock else "TTTC0801U"
         self._bal_tr  = "VTTC8434R" if self._is_mock else "TTTC8434R"
         self._ord_tr  = "VTTC8001R" if self._is_mock else "TTTC8001R"
+        # 해외주식 TR_ID
+        self._buy_tr_os  = "VTTT1002U" if self._is_mock else "TTTT1002U"
+        self._sell_tr_os = "VTTT1006U" if self._is_mock else "TTTT1006U"
+        self._bal_tr_os  = "VTTS3012R" if self._is_mock else "TTTS3012R"
+        # 거래소 코드 매핑 (주문용 → 현재가조회용)
+        self._excg_price_map = {"NASD": "NAS", "NYSE": "NYS", "AMEX": "AMS"}
         if dry_run:
             print("[trader] ⚠️  드라이런 모드 — 실제 주문 없음, 로그·알림만 발송")
 
@@ -282,6 +288,169 @@ class KisTrader:
             "total_pnl": int(float(summary.get("evlu_pfls_smtl_amt", 0))),
             "holdings": holdings,
         }
+
+    # ── 해외주식 현재가 조회 ─────────────────────────────────────
+    def get_overseas_price(self, ticker: str, exchange: str) -> dict:
+        """해외주식 현재가 조회 (USD)"""
+        excd = self._excg_price_map.get(exchange, exchange[:3])
+        data = self.client.get(
+            path="/uapi/overseas-price/v1/quotations/price",
+            tr_id="HHDFS76200A",
+            params={"AUTH": "", "EXCD": excd, "SYMB": ticker}
+        )
+        output = data.get("output", {})
+        return {
+            "ticker": ticker,
+            "exchange": exchange,
+            "price_usd": float(output.get("last", 0) or 0),
+            "change_pct": float(output.get("rate", 0) or 0),
+            "name": output.get("name", ticker),
+        }
+
+    # ── 해외주식 주문 ────────────────────────────────────────────
+    def _log_order_overseas(self, order_type: str, ticker: str,
+                            quantity: int, price_usd: float,
+                            exchange: str, order_id: str):
+        with get_conn() as conn:
+            conn.execute(
+                """INSERT INTO trade_log
+                   (ticker, date, order_type, quantity, price, amount, order_id, status,
+                    market, exchange, currency, price_usd)
+                   VALUES (?, ?, ?, ?, 0, 0, ?, 'PENDING', 'US', ?, 'USD', ?)""",
+                (ticker, date.today().isoformat(),
+                 order_type, quantity, order_id, exchange, price_usd)
+            )
+
+    def buy_limit_overseas(self, ticker: str, quantity: int,
+                           price_usd: float, exchange: str = "NASD") -> Optional[str]:
+        """해외주식 지정가 매수 (현재가 기준 +0.3% 여유 포함)"""
+        if not self._check_daily_limit():
+            return None
+
+        order_price = round(price_usd * 1.003, 2)  # 슬리피지 여유
+
+        if self.dry_run:
+            import uuid
+            order_id = f"DRY-OS-{uuid.uuid4().hex[:8].upper()}"
+            print(f"[trader] 🧪 드라이런 BUY(US): {ticker} {quantity}주 "
+                  f"${order_price:.2f} [{exchange}] → {order_id}")
+            self._log_order_overseas("BUY", ticker, quantity, price_usd, exchange, order_id)
+            return order_id
+
+        body = {
+            "CANO": self.cfg["account_no"].split("-")[0],
+            "ACNT_PRDT_CD": self.cfg["account_no"].split("-")[1],
+            "OVRS_EXCG_CD": exchange,
+            "PDNO": ticker,
+            "ORD_DVSN": "00",
+            "ORD_QTY": str(quantity),
+            "OVRS_ORD_UNPR": f"{order_price:.2f}",
+            "ORD_SVR_DVSN_CD": "0",
+        }
+        try:
+            data = self.client.post(
+                path="/uapi/overseas-stock/v1/trading/order",
+                tr_id=self._buy_tr_os,
+                body=body,
+            )
+            order_id = data.get("output", {}).get("ODNO", "")
+            print(f"[trader] BUY(US) 접수: {ticker} {quantity}주 ${order_price:.2f} "
+                  f"[{exchange}] → {order_id}")
+            self._log_order_overseas("BUY", ticker, quantity, price_usd, exchange, order_id)
+            notify_trade("BUY", ticker, ticker, quantity, int(price_usd * 1400), "해외주문접수")
+            return order_id
+        except Exception as e:
+            print(f"[trader] ❌ BUY(US) 실패 ({ticker}): {e}")
+            notify_error("KisTrader.buy_limit_overseas", str(e))
+            return None
+
+    def sell_limit_overseas(self, ticker: str, quantity: int,
+                            price_usd: float, exchange: str = "NASD") -> Optional[str]:
+        """해외주식 지정가 매도 (현재가 기준 -0.3% 여유)"""
+        if not self._check_daily_limit():
+            return None
+
+        order_price = round(price_usd * 0.997, 2)
+
+        if self.dry_run:
+            import uuid
+            order_id = f"DRY-OS-{uuid.uuid4().hex[:8].upper()}"
+            print(f"[trader] 🧪 드라이런 SELL(US): {ticker} {quantity}주 "
+                  f"${order_price:.2f} [{exchange}] → {order_id}")
+            self._log_order_overseas("SELL", ticker, quantity, price_usd, exchange, order_id)
+            return order_id
+
+        body = {
+            "CANO": self.cfg["account_no"].split("-")[0],
+            "ACNT_PRDT_CD": self.cfg["account_no"].split("-")[1],
+            "OVRS_EXCG_CD": exchange,
+            "PDNO": ticker,
+            "ORD_DVSN": "00",
+            "ORD_QTY": str(quantity),
+            "OVRS_ORD_UNPR": f"{order_price:.2f}",
+            "ORD_SVR_DVSN_CD": "0",
+        }
+        try:
+            data = self.client.post(
+                path="/uapi/overseas-stock/v1/trading/order",
+                tr_id=self._sell_tr_os,
+                body=body,
+            )
+            order_id = data.get("output", {}).get("ODNO", "")
+            print(f"[trader] SELL(US) 접수: {ticker} {quantity}주 ${order_price:.2f} "
+                  f"[{exchange}] → {order_id}")
+            self._log_order_overseas("SELL", ticker, quantity, price_usd, exchange, order_id)
+            notify_trade("SELL", ticker, ticker, quantity, int(price_usd * 1400), "해외매도접수")
+            return order_id
+        except Exception as e:
+            print(f"[trader] ❌ SELL(US) 실패 ({ticker}): {e}")
+            notify_error("KisTrader.sell_limit_overseas", str(e))
+            return None
+
+    # ── 해외주식 잔고 조회 ───────────────────────────────────────
+    def get_overseas_balance(self, exchange: str = "NASD") -> list:
+        """해외 보유 종목 조회"""
+        acno = self.cfg["account_no"].split("-")
+        try:
+            data = self.client.get(
+                path="/uapi/overseas-stock/v1/trading/inquire-balance",
+                tr_id=self._bal_tr_os,
+                params={
+                    "CANO": acno[0],
+                    "ACNT_PRDT_CD": acno[1],
+                    "OVRS_EXCG_CD": exchange,
+                    "TR_CRCY_CD": "USD",
+                    "CTX_AREA_FK200": "",
+                    "CTX_AREA_NK200": "",
+                }
+            )
+        except RuntimeError:
+            return []
+
+        holdings = []
+        for item in data.get("output1", []):
+            qty = int(item.get("rmnd_qty", 0) or 0)
+            if qty == 0:
+                continue
+            holdings.append({
+                "ticker": item.get("ovrs_pdno", ""),
+                "name": item.get("ovrs_item_name", ticker if (ticker := item.get("ovrs_pdno","")) else ""),
+                "exchange": exchange,
+                "quantity": qty,
+                "avg_price_usd": float(item.get("pchs_avg_pric", 0) or 0),
+                "current_price_usd": float(item.get("now_pric2", 0) or 0),
+                "eval_amount_usd": float(item.get("ovrs_stck_evlu_amt", 0) or 0),
+                "pnl_usd": float(item.get("frcr_evlu_pfls_amt", 0) or 0),
+                "pnl_rate": float(item.get("evlu_pfls_rt", 0) or 0),
+            })
+        return holdings
+
+    def get_all_overseas_holdings(self) -> list:
+        """전체 해외 보유 종목 (NASD + NYSE + AMEX)"""
+        all_holdings = []
+        for excg in ["NASD", "NYSE", "AMEX"]:
+            all_holdings.extend(self.get_overseas_balance(excg))
+        return all_holdings
 
     def print_balance(self):
         bal = self.get_balance()

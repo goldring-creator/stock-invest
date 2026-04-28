@@ -64,6 +64,23 @@ def notify_trade(order_type: str, ticker: str, name: str,
     return _send(text)
 
 
+def notify_sell(order_type: str, ticker: str, name: str,
+                quantity: int, price: float, reason: str,
+                pnl_rate: float, market: str = "KR") -> bool:
+    """매도 실행 알림 (익절/손절)"""
+    icon = "💰" if "익절" in reason else "🛑"
+    currency = "원" if market == "KR" else "USD"
+    price_str = f"{int(price):,}{currency}" if market == "KR" else f"${price:.2f}"
+    sign = "+" if pnl_rate >= 0 else ""
+    text = (
+        f"{icon} <b>매도 실행 ({reason})</b>\n"
+        f"종목: {name} ({ticker})\n"
+        f"수량: {quantity:,}주  단가: {price_str}\n"
+        f"수익률: {sign}{pnl_rate:.1f}%"
+    )
+    return _send(text)
+
+
 def notify_error(source: str, error: str) -> bool:
     """오류 알림"""
     text = (

@@ -82,9 +82,25 @@ def init_db():
             amount      INTEGER,
             order_id    TEXT,           -- KIS 주문번호
             status      TEXT DEFAULT 'PENDING',  -- PENDING / FILLED / CANCELLED
+            market      TEXT DEFAULT 'KR',       -- KR / US
+            exchange    TEXT DEFAULT '',          -- NASD / NYSE / AMEX
+            currency    TEXT DEFAULT 'KRW',       -- KRW / USD
+            price_usd   REAL DEFAULT 0.0,
             created_at  TEXT DEFAULT (datetime('now', 'localtime'))
         );
         """)
+    # 기존 테이블에 신규 컬럼 마이그레이션 (이미 있으면 무시)
+    with get_conn() as conn:
+        for col_def in [
+            "ALTER TABLE trade_log ADD COLUMN market TEXT DEFAULT 'KR'",
+            "ALTER TABLE trade_log ADD COLUMN exchange TEXT DEFAULT ''",
+            "ALTER TABLE trade_log ADD COLUMN currency TEXT DEFAULT 'KRW'",
+            "ALTER TABLE trade_log ADD COLUMN price_usd REAL DEFAULT 0.0",
+        ]:
+            try:
+                conn.execute(col_def)
+            except Exception:
+                pass
     print(f"[database] DB 초기화 완료: {DB_PATH}")
 
 
