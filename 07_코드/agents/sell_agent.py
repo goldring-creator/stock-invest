@@ -8,27 +8,77 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from kis_trader import KisTrader
-from notifier import notify_sell, notify, notify_error
+from notifier import notify_sell, notify_error
 from database import get_conn
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 TAKE_PROFIT_PCT = 15.0   # +15% 익절
 STOP_LOSS_PCT   = 8.0    # -8% 손절
 MAX_HOLD_DAYS   = 22     # 22 거래일 (약 1개월)
 
 
-def _trading_days_held(ticker: str, market: str = "KR") -> int:
-    """해당 종목의 최초 매수일로부터 거래일 수 계산 (단순 달력 기준)"""
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT MIN(date) as first_buy FROM trade_log "
-            "WHERE ticker=? AND order_type='BUY' AND market=?",
-            (ticker, market)
-        ).fetchone()
-    if not row or not row["first_buy"]:
+def _trading_days_held(trader: KisTrader, ticker: str, market: str = "KR") -> int:
+    """KIS VTS API로 최초 매수 체결일 조회 → 보유 거래일 계산.
+    API 실패 시 로컬 DB로 fallback (원격 세션에선 항상 0 반환)."""
+    try:
+        start = (date.today() - timedelta(days=90)).strftime("%Y%m%d")
+        today_str = date.today().strftime("%Y%m%d")
+        acno = trader.cfg["account_no"].split("-")
+
+        if market == "KR":
+            data = trader.client.get(
+                path="/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+                tr_id=trader._ord_tr,
+                params={
+                    "CANO": acno[0], "ACNT_PRDT_CD": acno[1],
+                    "INQR_STRT_DT": start, "INQR_END_DT": today_str,
+                    "SLL_BUY_DVSN_CD": "02",
+                    "INQR_DVSN": "00", "PDNO": ticker,
+                    "CCLD_DVSN": "01",
+                    "ORD_GNO_BRNO": "", "ODNO": "",
+                    "INQR_DVSN_3": "00", "INQR_DVSN_1": "",
+                    "CTX_AREA_FK100": "", "CTX_AREA_NK100": "",
+                }
+            )
+            items = data.get("output1", [])
+        else:
+            tr_id = "VTTS3035R" if trader._is_mock else "TTTS3035R"
+            data = trader.client.get(
+                path="/uapi/overseas-stock/v1/trading/inquire-ccnl",
+                tr_id=tr_id,
+                params={
+                    "CANO": acno[0], "ACNT_PRDT_CD": acno[1],
+                    "PDNO": ticker, "SLL_BUY_DVSN_CD": "02",
+                    "ORD_STRT_DT": start, "ORD_END_DT": today_str,
+                    "CCLD_NCCS_DVSN": "01", "OVRS_EXCG_CD": "",
+                    "SORT_SQN": "DS",
+                    "CTX_AREA_FK200": "", "CTX_AREA_NK200": "",
+                }
+            )
+            items = data.get("output", [])
+
+        dates = [it.get("ord_dt", "") for it in items if it.get("ord_dt", "").strip()]
+        if not dates:
+            return 0
+        first_date = datetime.strptime(min(dates), "%Y%m%d").date()
+        return (date.today() - first_date).days
+
+    except Exception as e:
+        print(f"[sell_agent] {ticker} 보유기간 API 조회 실패: {e}")
+        # 로컬 DB fallback
+        try:
+            with get_conn() as conn:
+                row = conn.execute(
+                    "SELECT MIN(date) as first_buy FROM trade_log "
+                    "WHERE ticker=? AND order_type='BUY' AND market=?",
+                    (ticker, market)
+                ).fetchone()
+            if row and row["first_buy"]:
+                first_date = datetime.strptime(row["first_buy"], "%Y-%m-%d").date()
+                return (date.today() - first_date).days
+        except Exception:
+            pass
         return 0
-    first_date = datetime.strptime(row["first_buy"], "%Y-%m-%d").date()
-    return (date.today() - first_date).days
 
 
 def check_domestic(trader: KisTrader) -> list:
@@ -38,7 +88,7 @@ def check_domestic(trader: KisTrader) -> list:
         bal = trader.get_balance()
         for h in bal.get("holdings", []):
             pnl_rate = h["pnl_rate"]
-            hold_days = _trading_days_held(h["ticker"], "KR")
+            hold_days = _trading_days_held(trader, h["ticker"], "KR")
             reason = None
             if pnl_rate >= TAKE_PROFIT_PCT:
                 reason = "익절"
@@ -68,7 +118,7 @@ def check_overseas(trader: KisTrader) -> list:
         holdings = trader.get_all_overseas_holdings()
         for h in holdings:
             pnl_rate = h["pnl_rate"]
-            hold_days = _trading_days_held(h["ticker"], "US")
+            hold_days = _trading_days_held(trader, h["ticker"], "US")
             reason = None
             if pnl_rate >= TAKE_PROFIT_PCT:
                 reason = "익절"

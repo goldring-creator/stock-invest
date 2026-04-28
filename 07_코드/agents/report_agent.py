@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from kis_trader import KisTrader
 from database import get_conn
-from notifier import notify, notify_error
+from notifier import notify_sell, notify_error
 from datetime import date
 
 
@@ -65,24 +65,16 @@ def run() -> bool:
         if not guardian_text:
             guardian_text = "\n  (당일 심사 없음)"
 
-        msg = (
-            f"📊 <b>일별 성과 리포트</b>  {today}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💼 <b>포트폴리오</b>\n"
-            f"  예수금:   {bal['cash']:,}원\n"
-            f"  평가금액: {bal['total_eval']:,}원\n"
-            f"  평가손익: {pnl_sign}{pnl:,}원 ({pnl_sign}{pnl_rate:.2f}%)"
+        print(
+            f"\n[report_agent] === 일별 리포트 {today} ===\n"
+            f"예수금: {bal['cash']:,}원  평가: {bal['total_eval']:,}원  "
+            f"손익: {pnl_sign}{pnl:,}원 ({pnl_sign}{pnl_rate:.2f}%)"
             f"{holdings_text}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📋 <b>당일 주문</b>{trades_text}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🧠 <b>버핏 가디언 판단</b>{guardian_text}"
+            f"당일주문:{trades_text}\n"
+            f"버핏판단:{guardian_text}"
         )
-
-        ok = notify(msg)
-        if ok:
-            print("[report_agent] ✅ 텔레그램 리포트 전송 완료")
-        return ok
+        print("[report_agent] ✅ 리포트 출력 완료 (매매 발생 시에만 텔레그램 전송)")
+        return True
 
     except Exception as e:
         notify_error("ReportAgent", str(e))

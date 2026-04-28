@@ -19,12 +19,18 @@ def _send(text: str, parse_mode: str = "HTML") -> bool:
         chat_id = cfg.get("chat_id", "")
         if not token or not chat_id:
             return False
+        payload: dict = {"chat_id": chat_id, "text": text}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         resp = requests.post(
             TELEGRAM_API.format(token=token),
-            json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+            json=payload,
             timeout=10,
         )
-        return resp.json().get("ok", False)
+        result = resp.json()
+        if not result.get("ok", False):
+            print(f"[notifier] Telegram 거부: {result.get('description', result)}")
+        return result.get("ok", False)
     except Exception as e:
         print(f"[notifier] 전송 실패: {e}")
         return False
@@ -82,13 +88,13 @@ def notify_sell(order_type: str, ticker: str, name: str,
 
 
 def notify_error(source: str, error: str) -> bool:
-    """오류 알림"""
+    """오류 알림 — HTML 없이 plain text 전송 (에러 메시지 내 특수문자 안전)"""
     text = (
-        f"🚨 <b>오류 발생</b>\n"
+        f"🚨 오류 발생\n"
         f"위치: {source}\n"
         f"내용: {error[:300]}"
     )
-    return _send(text)
+    return _send(text, parse_mode="")
 
 
 def notify_daily_summary(date: str, portfolio_value: int,
