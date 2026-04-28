@@ -62,6 +62,16 @@ class KisTrader:
             return False
         return True
 
+    def remaining_daily_orders(self) -> int:
+        """오늘 남은 주문 가능 건수"""
+        today = date.today().isoformat()
+        with get_conn() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM trade_log WHERE date=? AND status!='CANCELLED'",
+                (today,)
+            ).fetchone()[0]
+        return max(0, MAX_ORDERS_PER_DAY - count)
+
     def _check_amount_limit(self, quantity: int, price: int) -> bool:
         amount = quantity * price
         if amount > MAX_AMOUNT_PER_ORDER:

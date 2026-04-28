@@ -7,6 +7,12 @@
 08_데이터/*.db-shm
 08_데이터/*.db-wal
 
+# 매일 자동생성되는 분석 데이터 (코드가 아닌 실행 결과)
+08_데이터/guardian_decisions.json
+08_데이터/guardian_decisions_us.json
+08_데이터/company_data.json
+08_데이터/us_company_data.json
+
 # Python
 __pycache__/
 *.pyc
