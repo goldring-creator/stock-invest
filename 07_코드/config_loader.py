@@ -25,8 +25,5 @@ def get_naver_config() -> dict:
 def get_dart_config() -> dict:
     return load_config()["dart"]
 
-def get_claude_config() -> dict:
-    return load_config()["claude"]
-
 def get_telegram_config() -> dict:
     return load_config()["telegram"]
