@@ -2,8 +2,10 @@
 06_설정파일/config.yaml
 07_코드/.kis_token_cache.json
 
-# 데이터베이스 (GitHub Actions에서는 캐시로 관리)
+# 데이터베이스
 08_데이터/*.db
+08_데이터/*.db-shm
+08_데이터/*.db-wal
 
 # Python
 __pycache__/

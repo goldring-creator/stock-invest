@@ -1,0 +1,326 @@
+====================================================================
+   AI 주식 자동매매 시스템 — 설명서
+   버전: 1.0  |  기준일: 2026-04-28
+====================================================================
+
+이 시스템은 워런 버핏 투자 원칙을 기반으로 AI(Claude)가 종목을 분석하고,
+한국투자증권 모의투자(VTS) API를 통해 자동으로 매수·매도를 실행하는
+비상업적 학습용 프로그램입니다.
+
+실제 투자에 사용하기 전에 반드시 모의투자로 충분히 테스트하십시오.
+투자 손실에 대한 책임은 사용자 본인에게 있습니다.
+
+--------------------------------------------------------------------
+[목차]
+  1. 시스템 구성
+  2. 필요 조건
+  3. 설치 방법
+  4. 설정 파일 작성
+  5. 실행 방법
+  6. AI 분석 원리
+  7. 텔레그램 알림
+  8. Claude AI 자동화 연결
+  9. 폴더 구조
+ 10. 자주 묻는 질문 (FAQ)
+--------------------------------------------------------------------
+
+
+1. 시스템 구성
+==============
+
+이 시스템은 다음 5단계를 매일 자동으로 수행합니다:
+
+  [데이터 수집] → [AI 분석] → [투자 판단] → [자동 주문] → [텔레그램 알림]
+
+  - 데이터 수집 : pykrx(주가), DART(재무제표), 네이버(뉴스) API
+  - AI 분석     : Claude AI가 버핏 5원칙으로 각 종목에 점수 부여
+  - 투자 판단   : APPROVE(85점↑), FLAG(60~84점), REJECT(60점↓)
+  - 자동 주문   : 한국투자증권 VTS API로 매수·매도 주문 실행
+  - 알림        : 매수·매도가 실제로 발생했을 때만 텔레그램 전송
+
+
+2. 필요 조건
+============
+
+  소프트웨어
+  ----------
+  - Python 3.10 이상
+  - pip (Python 패키지 관리자)
+  - git (코드 다운로드용)
+
+  계정 및 API 키
+  --------------
+  아래 4가지 API 키를 미리 발급받아야 합니다:
+
+  (1) 한국투자증권 OpenAPI (KIS)
+      - 신청: apiportal.koreainvestment.com
+      - 발급 항목: 앱키(App Key), 앱시크릿(App Secret), 모의투자 계좌번호
+      - 주의: '모의투자' 선택, 해외주식 포함 신청 권장
+
+  (2) 네이버 개발자 API
+      - 신청: developers.naver.com → Application 등록
+      - 발급 항목: Client ID, Client Secret
+      - 사용 API: '검색' (뉴스 검색이 포함됨)
+
+  (3) DART 공시 API
+      - 신청: opendart.fss.or.kr → 인증키 신청
+      - 발급 항목: API 인증키 (이메일로 수신)
+
+  (4) Telegram 봇
+      - Telegram 앱에서 @BotFather 검색
+      - /newbot 명령으로 봇 생성 → 봇 토큰 수령
+      - 봇에게 먼저 메시지를 보낸 뒤:
+        https://api.telegram.org/bot{봇_토큰}/getUpdates
+        접속하여 result[0].message.chat.id 값 확인 (이것이 chat_id)
+
+  Claude AI
+  ---------
+  - claude.ai/code 에서 Claude Code 구독 필요
+  - GitHub App 설치: github.com/apps/claude
+    (stock-invest 저장소에 Claude 앱 접근 권한 부여)
+
+
+3. 설치 방법
+============
+
+터미널(Terminal)을 열고 아래 명령어를 순서대로 실행합니다.
+
+  # 1. 코드 다운로드
+  git clone https://github.com/goldring-creator/stock-invest.git
+  cd stock-invest
+
+  # 2. Python 패키지 설치
+  pip install -r 07_코드/requirements.txt
+
+설치 완료 후 아래 5번 '실행 방법'으로 이동합니다.
+
+
+4. 설정 파일 작성
+=================
+
+저장소 루트에서 '06_설정파일' 폴더 안에 'config.yaml' 파일을 새로 만들고
+아래 내용을 붙여넣은 뒤 각 값을 실제 발급받은 키로 교체합니다.
+
+  [파일 경로] 06_설정파일/config.yaml
+
+  ------- 파일 내용 시작 -------
+
+  kis:
+    mock:
+      app_key: "발급받은 앱키"
+      app_secret: "발급받은 앱시크릿"
+      account_no: "모의투자 계좌번호-01"
+    real:
+      app_key: ""
+      app_secret: ""
+      account_no: ""
+    use_mock: true       ← 모의투자 사용 여부 (true 유지 권장)
+
+  dart:
+    api_key: "DART 인증키"
+
+  telegram:
+    bot_token: "봇 토큰"
+    chat_id: "chat_id"
+
+  naver:
+    client_id: "Client ID"
+    client_secret: "Client Secret"
+
+  ------- 파일 내용 끝 -------
+
+주의: account_no 끝에 '-01'을 반드시 붙입니다. (예: ACCOUNT_NO_REDACTED)
+주의: 이 파일은 .gitignore에 추가하여 GitHub에 올라가지 않도록 하세요.
+
+
+5. 실행 방법
+============
+
+모든 명령어는 '07_코드' 폴더 안에서 실행합니다.
+
+  cd 07_코드
+
+  ---[ CLI 방식 (권장) ]---
+
+  python3 cli.py status           # 설정 및 API 연결 상태 확인
+  python3 cli.py collect          # 시세·재무·뉴스 데이터 수집
+  python3 cli.py prepare          # 국내 종목 분석 데이터 준비
+  python3 cli.py us-prepare       # 미국 종목 분석 데이터 준비
+  python3 cli.py execute          # 국내 매수 주문 실행
+  python3 cli.py us-execute       # 미국 매수 주문 실행
+  python3 cli.py sell             # 국내 매도 체크 (익절/손절/만기)
+  python3 cli.py sell --market US # 미국 매도 체크
+  python3 cli.py sell --market ALL# 전체 매도 체크
+  python3 cli.py report           # 일별 포트폴리오 리포트 (콘솔 출력)
+
+  ---[ 직접 실행 방식 ]---
+
+  python3 scheduler.py --phase=collect
+  python3 scheduler.py --phase=prepare
+  python3 scheduler.py --phase=sell --market=KR
+  python3 scheduler.py --phase=execute
+  python3 scheduler.py --phase=report
+
+  ---[ 테스트 ]---
+
+  python3 test_connection.py      # KIS API 연결 테스트
+  python3 test_guardian.py        # 버핏 가디언 분석 테스트
+
+첫 실행 순서:
+  1. python3 cli.py status        → API 키 확인
+  2. python3 cli.py collect       → 데이터 수집
+  3. python3 cli.py prepare       → 분석 데이터 준비
+  4. (Claude가 guardian_decisions.json 작성)
+  5. python3 cli.py execute       → 주문 실행
+
+
+6. AI 분석 원리
+===============
+
+Claude AI는 각 종목을 아래 5가지 기준으로 평가합니다 (각 20점, 합계 100점).
+
+  1. 경제적 해자 (Moat)
+     브랜드, 특허, 네트워크 효과, 전환비용 등
+     경쟁사가 따라오기 어려운 장벽이 있는가?
+
+  2. 이해 가능한 사업 (Understandable)
+     10년 후에도 이 사업이 유효한가?
+     비즈니스 모델이 단순하고 예측 가능한가?
+
+  3. 재무 건전성 (Financials)
+     ROE 15% 이상, 낮은 부채비율, 안정적인 잉여현금흐름
+
+  4. 시장 모멘텀 (Momentum)
+     외국인·기관 수급, 뉴스 감성, 현재 시장 테마와의 부합도
+
+  5. 합리적 주가 (Valuation)
+     PER, PBR 등 밸류에이션 지표로 내재가치 대비 현재 주가 판단
+
+판단 기준:
+  - APPROVE (85점 이상) : 적극 매수
+  - FLAG    (60~84점)   : 소량 매수 또는 관망
+  - REJECT  (60점 미만) : 매수 제외
+
+매도 기준 (자동 실행):
+  - 익절 : +15% 이상 수익 시
+  - 손절 : -8% 이하 손실 시
+  - 만기 : 22 거래일 (약 1개월) 초과 보유 시
+
+
+7. 텔레그램 알림
+================
+
+알림은 실제 매수·매도가 발생했을 때만 전송됩니다.
+정기적인 상태 알림은 전송하지 않습니다.
+
+전송되는 알림:
+  - 매수 주문 체결 시: 종목명, 수량, 단가, 금액
+  - 매도 실행 시: 종목명, 수량, 단가, 수익률, 이유(익절/손절/만기)
+  - 오류 발생 시: 오류 위치 및 내용
+
+알림이 오지 않는 경우:
+  (1) config.yaml의 bot_token, chat_id가 올바른지 확인
+  (2) 봇에게 먼저 메시지를 보냈는지 확인
+  (3) 07_코드 폴더에서 python3 notifier.py 실행하여 테스트
+
+
+8. Claude AI 자동화 연결
+========================
+
+AI가 정해진 시각에 클라우드에서 자동 실행되도록 설정합니다.
+
+  준비 사항:
+  - claude.ai/code 에서 Claude Code 구독
+  - github.com/apps/claude 에서 GitHub App 설치
+    (stock-invest 저장소에 접근 권한 부여)
+
+  루틴 4개 등록 (claude.ai/code/routines):
+
+  루틴 1 — 오전 09:00 KST (00:00 UTC) | 월~금
+    국내 매도체크 + 데이터 수집 + AI 분석 + 국내 매수
+
+  루틴 2 — 오후 03:00 KST (06:00 UTC) | 월~금
+    국내 매도체크 + 일별 리포트
+
+  루틴 3 — 오후 10:00 KST (13:00 UTC) | 월~금
+    미국 매도체크 + 데이터 준비 + AI 분석 + 미국 매수
+
+  루틴 4 — 새벽 04:30 KST (19:30 UTC) | 월~금
+    미국 장 마감 전 매도체크
+
+  각 루틴의 프롬프트:
+    07_코드/remote_agent_prompt.md 파일에 루틴별 프롬프트가 모두 작성되어 있습니다.
+    해당 내용을 복사하여 claude.ai/code/routines 설정 화면에 붙여넣으면 됩니다.
+
+
+9. 폴더 구조
+============
+
+  stock-invest/
+  ├── 06_설정파일/
+  │   └── config.yaml              ← API 키 설정 파일 (직접 생성)
+  ├── 07_코드/
+  │   ├── cli.py                   ← 명령줄 인터페이스 (이 파일)
+  │   ├── scheduler.py             ← 메인 오케스트레이터
+  │   ├── kis_trader.py            ← 한국투자증권 주문 모듈
+  │   ├── kis_auth.py              ← KIS 인증 토큰 관리
+  │   ├── kis_client.py            ← KIS API 클라이언트
+  │   ├── database.py              ← SQLite 데이터베이스
+  │   ├── notifier.py              ← 텔레그램 알림 모듈
+  │   ├── config_loader.py         ← 설정 파일 로더
+  │   ├── agents/
+  │   │   ├── data_agent.py        ← 데이터 수집 에이전트
+  │   │   ├── guardian_agent.py    ← 버핏 가디언 에이전트
+  │   │   ├── trading_agent.py     ← 국내 주문 에이전트
+  │   │   ├── us_trading_agent.py  ← 미국 주문 에이전트
+  │   │   ├── sell_agent.py        ← 매도 에이전트
+  │   │   └── report_agent.py      ← 리포트 에이전트
+  │   ├── data_pipeline/           ← 데이터 수집 파이프라인
+  │   └── requirements.txt         ← Python 패키지 목록
+  ├── 08_데이터/
+  │   ├── company_data.json        ← 국내 종목 분석 데이터 (자동 생성)
+  │   ├── us_company_data.json     ← 미국 종목 분석 데이터 (자동 생성)
+  │   ├── guardian_decisions.json  ← AI 분석 결과 (Claude가 작성)
+  │   └── guardian_decisions_us.json
+  └── 실행 가이드.html             ← 시각적 설정 가이드
+
+
+10. 자주 묻는 질문 (FAQ)
+========================
+
+Q. config.yaml은 어디에 만드나요?
+A. 저장소 루트의 06_설정파일/ 폴더 안에 config.yaml 파일을 만듭니다.
+   해당 폴더가 없으면 먼저 폴더를 생성하세요.
+
+Q. INVALID_CHECK_ACNO 오류가 나옵니다.
+A. KIS 모의투자 계좌번호가 올바르지 않습니다.
+   apiportal.koreainvestment.com → TESTBED에서 잔고조회를 실행하면
+   올바른 계좌번호(CANO)를 확인할 수 있습니다.
+   account_no 형식: "CANO-01" (예: "ACCOUNT_NO_REDACTED")
+
+Q. 텔레그램 알림이 오지 않습니다.
+A. (1) config.yaml의 bot_token, chat_id 확인
+   (2) 텔레그램 앱에서 해당 봇에게 메시지를 먼저 보냈는지 확인
+   (3) cd 07_코드 && python3 notifier.py 실행으로 테스트
+
+Q. 실전 투자(real account)로 전환하려면?
+A. config.yaml의 real 섹션에 실전 앱키·시크릿·계좌번호를 입력하고
+   use_mock: false 로 변경합니다.
+   단, 실전 투자 전 반드시 모의투자로 충분한 검증을 권장합니다.
+
+Q. 감시 종목을 변경하고 싶습니다.
+A. 07_코드/data_pipeline/ 폴더 내 수집 모듈에서 종목 목록을 수정하거나
+   08_데이터/strategy_guide.md의 감시 종목 리스트를 편집하세요.
+
+Q. Python 버전 오류가 납니다.
+A. Python 3.10 이상이 필요합니다.
+   python3 --version 으로 버전을 확인하고,
+   3.10 미만이면 python.org에서 최신 버전을 설치하세요.
+
+Q. Claude Remote Agent가 매일 자동 실행되지 않습니다.
+A. claude.ai/code/routines 에서 루틴이 enabled 상태인지 확인하세요.
+   GitHub App이 stock-invest 저장소에 설치되어 있어야 합니다.
+
+--------------------------------------------------------------------
+문의: GitHub Issues (github.com/goldring-creator/stock-invest/issues)
+--------------------------------------------------------------------
