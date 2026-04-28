@@ -1,0 +1,188 @@
+name: AI 주식 자동화 스케줄러
+
+on:
+  schedule:
+    # KST = UTC+9. GitHub Actions는 UTC 기준
+    - cron: '30 23 * * 0-4'   # KST 08:30 (월~금) — 데이터 수집
+    - cron: '00 0  * * 1-5'   # KST 09:00 (월~금) — 분석 + 주문
+    - cron: '30 6  * * 1-5'   # KST 15:30 (월~금) — 일별 리포트
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: '실행 단계'
+        required: true
+        default: 'report'
+        type: choice
+        options: [collect, trade, report, all]
+      dry_run:
+        description: '드라이런 (실제 주문 없음)'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+jobs:
+  collect:
+    name: 데이터 수집 (08:30)
+    if: github.event.schedule == '30 23 * * 0-4' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.phase == 'collect' || github.event.inputs.phase == 'all'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 의존성 설치
+        run: pip install -r 07_코드/requirements.txt
+
+      - name: DB 복원
+        uses: actions/cache@v4
+        with:
+          path: 08_데이터/stock.db
+          key: stock-db-${{ github.run_id }}
+          restore-keys: stock-db-
+
+      - name: 설정 파일 생성
+        run: |
+          mkdir -p 06_설정파일
+          cat > 06_설정파일/config.yaml << 'EOF'
+          kis:
+            mock:
+              app_key: "${{ secrets.KIS_MOCK_APP_KEY }}"
+              app_secret: "${{ secrets.KIS_MOCK_APP_SECRET }}"
+              account_no: "${{ secrets.KIS_MOCK_ACCOUNT }}"
+            use_mock: true
+          dart:
+            api_key: "${{ secrets.DART_API_KEY }}"
+          claude:
+            api_key: "${{ secrets.CLAUDE_API_KEY }}"
+          telegram:
+            bot_token: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+            chat_id: "${{ secrets.TELEGRAM_CHAT_ID }}"
+          naver:
+            client_id: "${{ secrets.NAVER_CLIENT_ID }}"
+            client_secret: "${{ secrets.NAVER_CLIENT_SECRET }}"
+          EOF
+
+      - name: 데이터 수집 실행
+        working-directory: 07_코드
+        run: python3 scheduler.py --phase=collect
+
+      - name: DB 저장
+        uses: actions/cache@v4
+        with:
+          path: 08_데이터/stock.db
+          key: stock-db-${{ github.run_id }}
+
+  trade:
+    name: 분석 + 주문 (09:00)
+    if: github.event.schedule == '00 0 * * 1-5' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.phase == 'trade' || github.event.inputs.phase == 'all'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 의존성 설치
+        run: pip install -r 07_코드/requirements.txt
+
+      - name: DB 복원
+        uses: actions/cache@v4
+        with:
+          path: 08_데이터/stock.db
+          key: stock-db-
+          restore-keys: stock-db-
+
+      - name: 설정 파일 생성
+        run: |
+          mkdir -p 06_설정파일
+          cat > 06_설정파일/config.yaml << 'EOF'
+          kis:
+            mock:
+              app_key: "${{ secrets.KIS_MOCK_APP_KEY }}"
+              app_secret: "${{ secrets.KIS_MOCK_APP_SECRET }}"
+              account_no: "${{ secrets.KIS_MOCK_ACCOUNT }}"
+            use_mock: true
+          dart:
+            api_key: "${{ secrets.DART_API_KEY }}"
+          claude:
+            api_key: "${{ secrets.CLAUDE_API_KEY }}"
+          telegram:
+            bot_token: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+            chat_id: "${{ secrets.TELEGRAM_CHAT_ID }}"
+          naver:
+            client_id: "${{ secrets.NAVER_CLIENT_ID }}"
+            client_secret: "${{ secrets.NAVER_CLIENT_SECRET }}"
+          EOF
+
+      - name: 분석 + 주문 실행
+        working-directory: 07_코드
+        run: |
+          DRY=${{ github.event.inputs.dry_run || 'false' }}
+          if [ "$DRY" = "true" ]; then
+            python3 scheduler.py --phase=trade --dry-run
+          else
+            python3 scheduler.py --phase=trade
+          fi
+
+      - name: DB 저장
+        uses: actions/cache@v4
+        with:
+          path: 08_데이터/stock.db
+          key: stock-db-${{ github.run_id }}
+
+  report:
+    name: 일별 리포트 (15:30)
+    if: github.event.schedule == '30 6 * * 1-5' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.phase == 'report' || github.event.inputs.phase == 'all'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 의존성 설치
+        run: pip install -r 07_코드/requirements.txt
+
+      - name: DB 복원
+        uses: actions/cache@v4
+        with:
+          path: 08_데이터/stock.db
+          key: stock-db-
+          restore-keys: stock-db-
+
+      - name: 설정 파일 생성
+        run: |
+          mkdir -p 06_설정파일
+          cat > 06_설정파일/config.yaml << 'EOF'
+          kis:
+            mock:
+              app_key: "${{ secrets.KIS_MOCK_APP_KEY }}"
+              app_secret: "${{ secrets.KIS_MOCK_APP_SECRET }}"
+              account_no: "${{ secrets.KIS_MOCK_ACCOUNT }}"
+            use_mock: true
+          dart:
+            api_key: "${{ secrets.DART_API_KEY }}"
+          claude:
+            api_key: "${{ secrets.CLAUDE_API_KEY }}"
+          telegram:
+            bot_token: "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+            chat_id: "${{ secrets.TELEGRAM_CHAT_ID }}"
+          naver:
+            client_id: "${{ secrets.NAVER_CLIENT_ID }}"
+            client_secret: "${{ secrets.NAVER_CLIENT_SECRET }}"
+          EOF
+
+      - name: 리포트 실행
+        working-directory: 07_코드
+        run: python3 scheduler.py --phase=report

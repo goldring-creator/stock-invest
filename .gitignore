@@ -1,0 +1,15 @@
+# API 키 및 민감 정보 — 절대 커밋 금지
+06_설정파일/config.yaml
+07_코드/.kis_token_cache.json
+
+# 데이터베이스 (GitHub Actions에서는 캐시로 관리)
+08_데이터/*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# macOS
+.DS_Store
