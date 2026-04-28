@@ -129,7 +129,7 @@
 
   ------- 파일 내용 끝 -------
 
-주의: account_no 끝에 '-01'을 반드시 붙입니다. (예: ACCOUNT_NO_REDACTED)
+주의: account_no 끝에 '-01'을 반드시 붙입니다. (예: XXXXXXXXX-01)
 주의: 이 파일은 .gitignore에 추가하여 GitHub에 올라가지 않도록 하세요.
 
 
@@ -296,7 +296,7 @@ Q. INVALID_CHECK_ACNO 오류가 나옵니다.
 A. KIS 모의투자 계좌번호가 올바르지 않습니다.
    apiportal.koreainvestment.com → TESTBED에서 잔고조회를 실행하면
    올바른 계좌번호(CANO)를 확인할 수 있습니다.
-   account_no 형식: "CANO-01" (예: "ACCOUNT_NO_REDACTED")
+   account_no 형식: "CANO-01" (예: "XXXXXXXXX-01")
 
 Q. 텔레그램 알림이 오지 않습니다.
 A. (1) config.yaml의 bot_token, chat_id 확인

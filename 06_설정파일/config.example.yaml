@@ -1,0 +1,31 @@
+# =====================================================
+#  AI 주식 자동매매 — 설정 파일 예시
+# =====================================================
+# 이 파일을 복사해서 같은 폴더에 config.yaml 이름으로 저장한 뒤
+# 각 항목을 실제 발급받은 값으로 교체하세요.
+#
+# 복사 명령어 (터미널):
+#   cp 06_설정파일/config.example.yaml 06_설정파일/config.yaml
+# =====================================================
+
+kis:
+  mock:                              # 모의투자 계정 (VTS)
+    app_key: "여기에_KIS_앱키_입력"
+    app_secret: "여기에_KIS_앱시크릿_입력"
+    account_no: "모의투자계좌번호-01"  # 예: 50000000-01
+  real:                              # 실전 계정 (사용 시에만 입력)
+    app_key: ""
+    app_secret: ""
+    account_no: ""
+  use_mock: true                     # true = 모의투자 / false = 실전
+
+dart:
+  api_key: "여기에_DART_인증키_입력"  # opendart.fss.or.kr 에서 발급
+
+telegram:
+  bot_token: "여기에_텔레그램_봇토큰_입력"  # @BotFather 에서 발급
+  chat_id: "여기에_chat_id_입력"            # getUpdates API로 확인
+
+naver:
+  client_id: "여기에_네이버_Client_ID_입력"
+  client_secret: "여기에_네이버_Client_Secret_입력"

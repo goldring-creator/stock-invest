@@ -4,24 +4,26 @@
 
 ```yaml
 # 06_설정파일/config.yaml
+# ※ 실제 키 값은 06_설정파일/config.yaml 에 직접 입력하세요.
+#   이 파일(remote_agent_prompt.md)에 키를 쓰지 마세요.
 kis:
   mock:
-    app_key: "KIS_APP_KEY_REDACTED"
-    app_secret: "KIS_APP_SECRET_REDACTED"
-    account_no: "ACCOUNT_NO_REDACTED"
+    app_key: "여기에_KIS_앱키_입력"
+    app_secret: "여기에_KIS_앱시크릿_입력"
+    account_no: "모의투자계좌번호-01"
   real:
     app_key: ""
     app_secret: ""
     account_no: ""
   use_mock: true
 dart:
-  api_key: "DART_API_KEY_REDACTED"
+  api_key: "여기에_DART_인증키_입력"
 telegram:
-  bot_token: "TELEGRAM_BOT_TOKEN_REDACTED"
-  chat_id: "TELEGRAM_CHAT_ID_REDACTED"
+  bot_token: "여기에_텔레그램_봇토큰_입력"
+  chat_id: "여기에_chat_id_입력"
 naver:
-  client_id: "NAVER_CLIENT_ID_REDACTED"
-  client_secret: "NAVER_CLIENT_SECRET_REDACTED"
+  client_id: "여기에_네이버_Client_ID_입력"
+  client_secret: "여기에_네이버_Client_Secret_입력"
 ```
 
 ---
